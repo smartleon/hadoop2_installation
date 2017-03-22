@@ -1,0 +1,390 @@
+hadoop2.0已经发布了稳定版本了，增加了很多特性，比如HDFS HA、YARN等。最新的hadoop-2.5.2又增加了YARN HA
+
+注意：apache提供的hadoop-2.5.2的安装包是在32位操作系统编译的，因为hadoop依赖一些C++的本地库，
+所以如果在64位的操作上安装hadoop-2.5.2就需要重新在64操作系统上重新编译
+（建议第一次安装用32位的系统，我将编译好的64位的也上传到群共享里了，如果有兴趣的可以自己编译一下）
+
+hadoop版本：hadoop2.5.2：http://apache.dataguru.cn/hadoop/common/hadoop-2.5.2/hadoop-2.5.2.tar.gz
+jdk版本：http://download.oracle.com/otn-pub/java/jdk/7u79-b15/jdk-7u79-linux-i586.tar.gz
+
+jdk安装位置：/iwisdom
+hadoop安装位置：/iwisdom
+前期准备就不详细说了，课堂上都介绍了
+1.修改Linux主机名
+vim /etc/sysconfig/network
+
+		NETWORKING=yes
+		HOSTNAME=hadoopcs01    ###
+2.修改IP
+两种方式：
+		第一种：通过Linux图形界面进行修改（强烈推荐）
+			进入Linux图形界面 -> 右键点击右上方的两个小电脑 -> 点击Edit connections -> 选中当前网络System eth0 -> 点击edit按钮 -> 选择IPv4 -> method选择为manual -> 点击add按钮 -> 添加IP：192.168.1.101 子网掩码：255.255.255.0 网关：192.168.1.1 -> apply
+	
+		第二种：修改配置文件方式（屌丝程序猿专用）
+			vim /etc/sysconfig/network-scripts/ifcfg-eth0
+			
+			DEVICE="eth0"
+			BOOTPROTO="static"               ###
+			HWADDR="00:0C:29:3C:BF:E7"
+			IPV6INIT="yes"
+			NM_CONTROLLED="yes"
+			ONBOOT="yes"
+			TYPE="Ethernet"
+			UUID="ce22eeca-ecde-4536-8cc2-ef0dc36d4a8c"
+			IPADDR="192.168.1.101"           ###
+			NETMASK="255.255.255.0"          ###
+			GATEWAY="192.168.1.1"            ###
+
+
+3.修改主机名和IP的映射关系
+	######注意######如果你们公司是租用的服务器或是使用的云主机（如华为用主机、阿里云主机等）
+	/etc/hosts里面要配置的是内网IP地址和主机名的映射关系
+	vim /etc/hosts
+			
+		192.168.1.101	hadoopcs01
+		
+		
+4.关闭防火墙
+		#查看防火墙状态
+		service iptables status
+		#关闭防火墙
+		service iptables stop
+		#查看防火墙开机启动状态
+		chkconfig iptables --list
+		#关闭防火墙开机启动
+		chkconfig iptables off
+5.配置ssh免登陆
+	#生成ssh免登陆密钥
+	#进入到我的home目录
+	cd ~/.ssh
+
+	ssh-keygen -t rsa （四个回车）
+	执行完这个命令后，会生成两个文件id_rsa（私钥）、id_rsa.pub（公钥）
+	将公钥拷贝到要免登陆的机器上
+	ssh-copy-id localhost
+6.安装JDK
+	6.1上传alt+p 后出现sftp窗口，然后put d:\xxx\yy\ll\jdk-7u_65-i585.tar.gz
+	6.2解压jdk
+		#创建文件夹
+		mkdir /iwisdom
+		#解压
+		tar -zxvf jdk-7u55-linux-i586.tar.gz -C /iwisdom
+		
+	6.3将java添加到环境变量中
+		vim /etc/profile
+		#在文件最后添加
+		export JAVA_HOME=/iwisdom/jdk-7u_65-i585
+		export PATH=$PATH:$JAVA_HOME/bin
+	
+		#刷新配置
+		source /etc/profile
+		
+配置环境变量等
+
+集群规划：
+	主机名		IP				安装的软件					运行的进程
+	hadoopcs01	192.168.0.201	jdk、hadoop	(hbase)				NameNode、DFSZKFailoverController(zkfc)
+	hadoopcs02	192.168.0.202	jdk、hadoop	(hbase)				NameNode、DFSZKFailoverController(zkfc)
+	hadoopcs03	192.168.0.203	jdk、hadoop	hive				ResourceManager
+	hadoopcs04	192.168.0.204	jdk、hadoop、（sqoop）				ResourceManager
+	hadoopcs05	192.168.0.205	jdk、hadoop、zookeeper(hbase)		DataNode、NodeManager、JournalNode、QuorumPeerMain
+	hadoopcs06	192.168.0.206	jdk、hadoop、zookeeper(hbase)		DataNode、NodeManager、JournalNode、QuorumPeerMain
+	hadoopcs07	192.168.0.207	jdk、hadoop、zookeeper(hbase)		DataNode、NodeManager、JournalNode、QuorumPeerMain
+	
+说明：
+	1.在hadoop2.0中通常由两个NameNode组成，一个处于active状态，另一个处于standby状态。Active NameNode对外提供服务，而Standby NameNode则不对外提供服务，仅同步active namenode的状态，以便能够在它失败时快速进行切换。
+	hadoop2.0官方提供了两种HDFS HA的解决方案，一种是NFS，另一种是QJM。这里我们使用简单的QJM。在该方案中，主备NameNode之间通过一组JournalNode同步元数据信息，一条数据只要成功写入多数JournalNode即认为写入成功。通常配置奇数个JournalNode
+	这里还配置了一个zookeeper集群，用于ZKFC（DFSZKFailoverController）故障转移，当Active NameNode挂掉了，会自动切换Standby NameNode为Active状态
+2.hadoop-2.2.0中依然存在一个问题，就是ResourceManager只有一个，存在单点故障，hadoop-2.5.2解决了这个问题，有两个ResourceManager，一个是Active，一个是Standby，状态由zookeeper进行协调
+
+安装步骤：
+	1.安装配置zooekeeper集群（在hadoopcs05上）
+		1.1解压
+			tar -zxvf zookeeper-3.4.6.tar.gz -C /iwisdom/
+		1.2修改配置
+			cd /iwisdom/zookeeper-3.4.6/conf/
+			cp zoo_sample.cfg zoo.cfg
+			vim zoo.cfg
+			修改：dataDir=/iwisdom/zookeeper-3.4.6/tmp
+			在最后添加：
+			server.1=hadoopcs05:2888:3888
+			server.2=hadoopcs06:2888:3888
+			server.3=hadoopcs07:2888:3888
+			保存退出
+			然后创建一个tmp文件夹
+			mkdir /iwisdom/zookeeper-3.4.6/tmp
+			再创建一个空文件
+			touch /iwisdom/zookeeper-3.4.6/tmp/myid
+			最后向该文件写入ID
+			echo 1 > /iwisdom/zookeeper-3.4.6/tmp/myid
+		1.3将配置好的zookeeper拷贝到其他节点(首先分别在hadoopcs06、hadoopcs07根目录下创建一个iwisdom目录：mkdir /iwisdom)
+			scp -r /iwisdom/zookeeper-3.4.6/ hadoopcs06:/iwisdom/
+			scp -r /iwisdom/zookeeper-3.4.6/ hadoopcs07:/iwisdom/
+			
+			注意：修改hadoopcs06、hadoopcs07对应/iwisdom/zookeeper-3.4.6/tmp/myid内容
+			hadoopcs06：
+				echo 2 > /iwisdom/zookeeper-3.4.6/tmp/myid
+			hadoopcs07：
+				echo 3 > /iwisdom/zookeeper-3.4.6/tmp/myid
+	
+	2.安装配置hadoop集群（在hadoopcs01上操作）
+		2.1解压
+			tar -zxvf hadoop-2.5.2.tar.gz -C /iwisdom/
+		2.2配置HDFS（hadoop2.0所有的配置文件都在$HADOOP_HOME/etc/hadoop目录下）
+			#将hadoop添加到环境变量中
+			vim /etc/profile
+			export JAVA_HOME=/iwisdom/jdk1.7.0_79
+			export HADOOP_HOME=/iwisdom/hadoop-2.5.2
+			export PATH=$PATH:$JAVA_HOME/bin:$HADOOP_HOME/bin
+			
+			#hadoop2.0的配置文件全部在$HADOOP_HOME/etc/hadoop下
+			cd /iwisdom/hadoop-2.5.2/etc/hadoop
+			
+			2.2.1修改hadoop-env.sh
+				export JAVA_HOME=/iwisdom/jdk1.7.0_79
+				
+			2.2.2修改core-site.xml
+				<configuration>
+					<!-- 指定hdfs的nameservice为ns1 -->
+					<property>
+						<name>fs.defaultFS</name>
+						<value>hdfs://ns1</value>
+					</property>
+					<!-- 指定hadoop临时目录 -->
+					<property>
+						<name>hadoop.tmp.dir</name>
+						<value>/iwisdom/hadoop-2.5.2/tmp</value>
+					</property>
+					<!-- 指定zookeeper地址 -->
+					<property>
+						<name>ha.zookeeper.quorum</name>
+						<value>hadoopcs05:2181,hadoopcs06:2181,hadoopcs07:2181</value>
+					</property>
+				</configuration>
+				
+			2.2.3修改hdfs-site.xml
+				<configuration>
+					<!--指定hdfs的nameservice为ns1，需要和core-site.xml中的保持一致 -->
+					<property>
+						<name>dfs.nameservices</name>
+						<value>ns1</value>
+					</property>
+					<!-- ns1下面有两个NameNode，分别是nn1，nn2 -->
+					<property>
+						<name>dfs.ha.namenodes.ns1</name>
+						<value>nn1,nn2</value>
+					</property>
+					<!-- nn1的RPC通信地址 -->
+					<property>
+						<name>dfs.namenode.rpc-address.ns1.nn1</name>
+						<value>hadoopcs01:9000</value>
+					</property>
+					<!-- nn1的http通信地址 -->
+					<property>
+						<name>dfs.namenode.http-address.ns1.nn1</name>
+						<value>hadoopcs01:50070</value>
+					</property>
+					<!-- nn2的RPC通信地址 -->
+					<property>
+						<name>dfs.namenode.rpc-address.ns1.nn2</name>
+						<value>hadoopcs02:9000</value>
+					</property>
+					<!-- nn2的http通信地址 -->
+					<property>
+						<name>dfs.namenode.http-address.ns1.nn2</name>
+						<value>hadoopcs02:50070</value>
+					</property>
+					<!-- 指定NameNode的元数据在JournalNode上的存放位置 -->
+					<property>
+						<name>dfs.namenode.shared.edits.dir</name>
+						<value>qjournal://hadoopcs05:8485;hadoopcs06:8485;hadoopcs07:8485/ns1</value>
+					</property>
+					<!-- 指定JournalNode在本地磁盘存放数据的位置 -->
+					<property>
+						<name>dfs.journalnode.edits.dir</name>
+						<value>/iwisdom/hadoop-2.5.2/journal</value>
+					</property>
+					<!-- 开启NameNode失败自动切换 -->
+					<property>
+						<name>dfs.ha.automatic-failover.enabled</name>
+						<value>true</value>
+					</property>
+					<!-- 配置失败自动切换实现方式 -->
+					<property>
+						<name>dfs.client.failover.proxy.provider.ns1</name>
+						<value>org.apache.hadoop.hdfs.server.namenode.ha.ConfiguredFailoverProxyProvider</value>
+					</property>
+					<!-- 配置隔离机制方法，多个机制用换行分割，即每个机制暂用一行-->
+					<property>
+						<name>dfs.ha.fencing.methods</name>
+						<value>
+							sshfence
+							shell(/bin/true)
+						</value>
+					</property>
+					<!-- 使用sshfence隔离机制时需要ssh免登陆 -->
+					<property>
+						<name>dfs.ha.fencing.ssh.private-key-files</name>
+						<value>/root/.ssh/id_rsa</value>
+					</property>
+					<!-- 配置sshfence隔离机制超时时间 -->
+					<property>
+						<name>dfs.ha.fencing.ssh.connect-timeout</name>
+						<value>30000</value>
+					</property>
+				</configuration>
+			
+			2.2.4修改mapred-site.xml
+				<configuration>
+					<!-- 指定mr框架为yarn方式 -->
+					<property>
+						<name>mapreduce.framework.name</name>
+						<value>yarn</value>
+					</property>
+				</configuration>	
+			
+			2.2.5修改yarn-site.xml
+				<configuration>
+						<!-- 开启RM高可靠 -->
+						<property>
+						   <name>yarn.resourcemanager.ha.enabled</name>
+						   <value>true</value>
+						</property>
+						<!-- 指定RM的cluster id -->
+						<property>
+						   <name>yarn.resourcemanager.cluster-id</name>
+						   <value>yrc</value>
+						</property>
+						<!-- 指定RM的名字 -->
+						<property>
+						   <name>yarn.resourcemanager.ha.rm-ids</name>
+						   <value>rm1,rm2</value>
+						</property>
+						<!-- 分别指定RM的地址 -->
+						<property>
+						   <name>yarn.resourcemanager.hostname.rm1</name>
+						   <value>hadoopcs03</value>
+						</property>
+						<property>
+						   <name>yarn.resourcemanager.hostname.rm2</name>
+						   <value>hadoopcs04</value>
+						</property>
+						<!-- 指定zk集群地址 -->
+						<property>
+						   <name>yarn.resourcemanager.zk-address</name>
+						   <value>hadoopcs05:2181,hadoopcs06:2181,hadoopcs07:2181</value>
+						</property>
+						<property>
+						   <name>yarn.nodemanager.aux-services</name>
+						   <value>mapreduce_shuffle</value>
+						</property>
+				</configuration>
+			
+				
+			2.2.6修改slaves(slaves是指定子节点的位置，因为要在hadoopcs01上启动HDFS、在hadoopcs03启动yarn，所以hadoopcs01上的slaves文件指定的是datanode的位置，hadoopcs03上的slaves文件指定的是nodemanager的位置)
+				hadoopcs05
+				hadoopcs06
+				hadoopcs07
+
+			2.2.7配置免密码登陆
+				#首先要配置hadoopcs01到hadoopcs02、hadoopcs03、hadoopcs04、hadoopcs05、hadoopcs06、hadoopcs07的免密码登陆
+				#在hadoopcs01上生产一对钥匙
+				ssh-keygen -t rsa
+				#将公钥拷贝到其他节点，包括自己
+				ssh-coyp-id hadoopcs01
+				ssh-coyp-id hadoopcs02
+				ssh-coyp-id hadoopcs03
+				ssh-coyp-id hadoopcs04
+				ssh-coyp-id hadoopcs05
+				ssh-coyp-id hadoopcs06
+				ssh-coyp-id hadoopcs07
+				#配置hadoopcs03到hadoopcs04、hadoopcs05、hadoopcs06、hadoopcs07的免密码登陆
+				#在hadoopcs03上生产一对钥匙
+				ssh-keygen -t rsa
+				#将公钥拷贝到其他节点
+				ssh-coyp-id hadoopcs04
+				ssh-coyp-id hadoopcs05
+				ssh-coyp-id hadoopcs06
+				ssh-coyp-id hadoopcs07
+				#注意：两个namenode之间要配置ssh免密码登陆，别忘了配置hadoopcs02到hadoopcs01的免登陆
+				在hadoopcs02上生产一对钥匙
+				ssh-keygen -t rsa
+				ssh-coyp-id -i hadoopcs01				
+		
+		2.4将配置好的hadoop拷贝到其他节点
+			scp -r /iwisdom/hadoop-2.5.2/ root@hadoopcs02:/iwisdom/
+			scp -r /iwisdom/hadoop-2.5.2/ root@hadoopcs03:/iwisdom/
+			scp -r /iwisdom/hadoop-2.5.2/ root@hadoopcs04:/iwisdom/
+			scp -r /iwisdom/hadoop-2.5.2/ root@hadoopcs05:/iwisdom/
+			scp -r /iwisdom/hadoop-2.5.2/ root@hadoopcs06:/iwisdom/
+			scp -r /iwisdom/hadoop-2.5.2/ root@hadoopcs07:/iwisdom/
+		防火墙一定要关闭，要不zookeeper会出问题
+		1.4关闭防火墙
+		#查看防火墙状态
+		service iptables status
+		#关闭防火墙
+		service iptables stop
+		#查看防火墙开机启动状态
+		chkconfig iptables --list
+		#关闭防火墙开机启动
+		chkconfig iptables off
+
+		###注意：严格按照下面的步骤
+		2.5启动zookeeper集群（分别在hadoopcs05、hadoopcs06、hadoopcs07上启动zk）
+			cd /iwisdom/zookeeper-3.4.6/bin/
+			./zkServer.sh start
+			#查看状态：一个leader，两个follower
+			./zkServer.sh status
+			
+		2.6启动journalnode（分别在在hadoopcs05、hadoopcs06、hadoopcs07上执行）
+			cd /iwisdom/hadoop-2.5.2
+			sbin/hadoop-daemon.sh start journalnode
+			#运行jps命令检验，hadoopcs05、hadoopcs06、hadoopcs07上多了JournalNode进程
+		
+		2.7格式化HDFS
+			#在hadoopcs01上执行命令:
+			hdfs namenode -format
+			#格式化后会在根据core-site.xml中的hadoop.tmp.dir配置生成个文件，这里我配置的是/iwisdom/hadoop-2.5.2/tmp，然后将/iwisdom/hadoop-2.5.2/tmp拷贝到hadoopcs02的/iwisdom/hadoop-2.5.2/下。
+			scp -r tmp/ hadoopcs02:/iwisdom/hadoop-2.5.2/
+		
+		2.8格式化ZK(在hadoopcs01上执行即可)
+			hdfs zkfc -formatZK
+		
+		2.9启动HDFS(在hadoopcs01上执行)
+			sbin/start-dfs.sh
+
+		2.10启动YARN(#####注意#####：是在itcast03上执行start-yarn.sh，把namenode和resourcemanager分开是因为性能问题，因为他们都要占用大量资源，所以把他们分开了，他们分开了就要分别在不同的机器上启动)
+			sbin/start-yarn.sh
+
+		
+	到此，hadoop-2.5.2配置完毕，可以统计浏览器访问:
+		http://192.168.1.201:50070
+		NameNode 'hadoopcs01:9000' (active)
+		http://192.168.1.202:50070
+		NameNode 'hadoopcs02:9000' (standby)
+	
+	验证HDFS HA
+		首先向hdfs上传一个文件
+		hadoop fs -put /etc/profile /profile
+		hadoop fs -ls /
+		然后再kill掉active的NameNode
+		kill -9 <pid of NN>
+		通过浏览器访问：http://192.168.1.202:50070
+		NameNode 'itcast02:9000' (active)
+		这个时候itcast02上的NameNode变成了active
+		在执行命令：
+		hadoop fs -ls /
+		-rw-r--r--   3 root supergroup       1926 2014-02-06 15:36 /profile
+		刚才上传的文件依然存在！！！
+		手动启动那个挂掉的NameNode
+		sbin/hadoop-daemon.sh start namenode
+		通过浏览器访问：http://192.168.1.201:50070
+		NameNode 'itcast01:9000' (standby)
+	
+	验证YARN：
+		运行一下hadoop提供的demo中的WordCount程序：
+		hadoop jar share/hadoop/mapreduce/hadoop-mapreduce-examples-2.5.2.jar wordcount /profile /out
+	
+	OK，大功告成！！！
+
+ 
