@@ -86,10 +86,10 @@ vim /etc/sysconfig/network
 	hadoopcs01	192.168.0.201	jdk、hadoop	(hbase)				NameNode、DFSZKFailoverController(zkfc)
 	hadoopcs02	192.168.0.202	jdk、hadoop	(hbase)				NameNode、DFSZKFailoverController(zkfc)
 	hadoopcs03	192.168.0.203	jdk、hadoop	hive				ResourceManager
-	hadoopcs04	192.168.0.204	jdk、hadoop、（sqoop）				ResourceManager
-	hadoopcs05	192.168.0.205	jdk、hadoop、zookeeper(hbase)		DataNode、NodeManager、JournalNode、QuorumPeerMain
-	hadoopcs06	192.168.0.206	jdk、hadoop、zookeeper(hbase)		DataNode、NodeManager、JournalNode、QuorumPeerMain
-	hadoopcs07	192.168.0.207	jdk、hadoop、zookeeper(hbase)		DataNode、NodeManager、JournalNode、QuorumPeerMain
+	hadoopcs04	192.168.0.204	jdk、hadoop、（sqoop、kafka）				ResourceManager
+	hadoopcs05	192.168.0.205	jdk、hadoop、zookeeper(hbase、kafka)		DataNode、NodeManager、JournalNode、QuorumPeerMain
+	hadoopcs06	192.168.0.206	jdk、hadoop、zookeeper(hbase、kafka)		DataNode、NodeManager、JournalNode、QuorumPeerMain
+	hadoopcs07	192.168.0.207	jdk、hadoop、zookeeper(hbase、kafka)		DataNode、NodeManager、JournalNode、QuorumPeerMain
 	
 说明：
 	1.在hadoop2.0中通常由两个NameNode组成，一个处于active状态，另一个处于standby状态。Active NameNode对外提供服务，而Standby NameNode则不对外提供服务，仅同步active namenode的状态，以便能够在它失败时快速进行切换。
@@ -385,6 +385,4 @@ vim /etc/sysconfig/network
 		运行一下hadoop提供的demo中的WordCount程序：
 		hadoop jar share/hadoop/mapreduce/hadoop-mapreduce-examples-2.5.2.jar wordcount /profile /out
 	
-	OK，大功告成！！！
-
- 
+	OK，大功告成！！
